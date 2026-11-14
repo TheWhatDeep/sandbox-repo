@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sprite editor test</title>
+<link rel="stylesheet" href="../css/app.css">
+<link rel="stylesheet" href="../css/sprite-editor.css">
+<style>
+  body { display: flex; flex-direction: column; }
+  #top { flex: none; display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--line); background: var(--panel); overflow: hidden; }
+  #top .btn { padding: 2px 8px; }
+  #log { font: 12px var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #wrap { flex: 1; min-height: 0; }
+  #host { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<!-- Test harness for js/sprite-editor.js. A stand-in host: counts begin/commit, keeps undo snapshots.
+     Query: ?ed=sprite|tileset  &w=..&h=.. (fixed container size)  &theme=light|dark  &blank=1 (empty starter sprite) -->
+<div id="top">
+  <button class="btn" id="b-sprite" type="button">Sprite</button>
+  <button class="btn" id="b-tiles" type="button">Tileset</button>
+  <button class="btn" id="b-undo" type="button">Undo</button>
+  <button class="btn" id="b-redo" type="button">Redo</button>
+  <span id="log"></span>
+</div>
+<div id="wrap"><div id="host"></div></div>
+<script src="../js/core.js"></script>
+<script src="../js/sprite-editor.js"></script>
+<script>
+(function () {
+  const q = new URLSearchParams(location.search), host = document.getElementById('host');
+  if (q.get('theme')) document.documentElement.dataset.theme = q.get('theme');
+  if (q.get('w')) host.style.width = q.get('w') + 'px';
+  if (q.get('h')) host.style.height = q.get('h') + 'px';
+
+  // ----- sample data, drawn on canvases -----
+  const mk = (w, h, fn) => { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d')); return c.toDataURL('image/png'); };
+  const hero = (leg, bob) => mk(16, 16, x => {
+    x.fillStyle = '#29366f'; x.fillRect(5, 6 + bob, 6, 6);            // body
+    x.fillStyle = '#ffcd75'; x.fillRect(5, 1 + bob, 6, 5);            // head
+    x.fillStyle = '#1a1c2c'; x.fillRect(6, 3 + bob, 1, 1); x.fillRect(9, 3 + bob, 1, 1);
+    x.fillStyle = '#b13e53'; x.fillRect(5, 0 + bob, 6, 2);            // hat
+    x.fillStyle = '#333c57'; x.fillRect(5 + leg, 12, 2, 4); x.fillRect(9 - leg, 12, 2, 4);
+  });
+  const sprite = {
+    id: 'spr1', name: 'Hero', w: 16, h: 16, ox: 8, oy: 15, hit: { x: 4, y: 9, w: 8, h: 7 },
+    anims: q.get('blank') ? [{ name: 'idle', fps: 3, loop: true, frames: [''] }] : [
+      { name: 'idle', fps: 3, loop: true, frames: [hero(0, 0), hero(0, 1)] },
+      { name: 'walk', fps: 8, loop: true, frames: [hero(0, 0), hero(1, 1), hero(0, 0), hero(-1, 1)] },
+    ],
+  };
+  const tileCols = ['#38b764', '#a7f070', '#257179', '#566c86', '#94b0c2', '#ef7d57', '#ffcd75', '#41a6f6'];
+  const tileset = {
+    id: 'ts1', name: 'Overworld', tw: 16, th: 16, cols: 8, rows: 3,
+    src: mk(128, 48, x => {
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 8; c++) {
+        if (r === 2 && c > 4) continue;                               // a few empty tiles
+        x.fillStyle = tileCols[(c + r * 3) % 8]; x.fillRect(c * 16, r * 16, 16, 16);
+        x.fillStyle = 'rgba(0,0,0,0.18)'; x.fillRect(c * 16 + 3, r * 16 + 4, 4, 2); x.fillRect(c * 16 + 9, r * 16 + 10, 4, 2);
+      }
+    }),
+    solid: Array(24).fill(false).map((_, i) => i === 3 || i === 4 || i === 11),
+  };
+
+  // ----- stand-in host: begin/commit log + undo by restoring the model in place -----
+  const T = (window.T = { sprite, tileset, log: [], ed: null, kind: '', open: 0, undoStack: [], redoStack: [] });
+  const model = () => (T.kind === 'tileset' ? tileset : sprite);
+  const restore = json => { const m = model(); Object.keys(m).forEach(k => delete m[k]); Object.assign(m, JSON.parse(json)); T.ed.refresh(); show(); };
+  const show = () => {
+    const b = T.log.filter(x => x === 'begin').length, c = T.log.filter(x => x === 'commit').length;
+    document.getElementById('log').textContent = 'begin ' + b + ' / commit ' + c + (T.open ? '  (OPEN!)' : '') + '  undo ' + T.undoStack.length;
+  };
+  const api = {
+    palette: q.get('pal') === 'none' ? undefined : ['#1a1c2c', '#5d275d', '#b13e53', '#ef7d57', '#ffcd75', '#a7f070', '#38b764', '#257179', '#29366f', '#3b5dc9', '#41a6f6', '#73eff7', '#f4f4f4', '#94b0c2', '#566c86', '#333c57'],
+    begin: () => { T.log.push('begin'); if (T.open++) T.log.push('NESTED'); T.pending = JSON.stringify(model()); },
+    commit: () => { T.log.push('commit'); T.open--; T.undoStack.push(T.pending); T.redoStack.length = 0; show(); },
+  };
+  T.undo = () => { if (T.undoStack.length) { T.redoStack.push(JSON.stringify(model())); restore(T.undoStack.pop()); } };
+  T.redo = () => { if (T.redoStack.length) { T.undoStack.push(JSON.stringify(model())); restore(T.redoStack.pop()); } };
+  T.mount = kind => {
+    if (T.ed) T.ed.destroy();
+    T.kind = kind; T.undoStack = []; T.redoStack = [];
+    T.ed = kind === 'tileset' ? OV.TilesetEditor.mount(host, tileset, api) : OV.SpriteEditor.mount(host, sprite, api);
+    document.getElementById('b-sprite').classList.toggle('active', kind !== 'tileset');
+    document.getElementById('b-tiles').classList.toggle('active', kind === 'tileset');
+    show();
+  };
+  document.getElementById('b-sprite').onclick = () => T.mount('sprite');
+  document.getElementById('b-tiles').onclick = () => T.mount('tileset');
+  document.getElementById('b-undo').onclick = T.undo;
+  document.getElementById('b-redo').onclick = T.redo;
+  T.mount(q.get('ed') === 'tileset' ? 'tileset' : 'sprite');
+})();
+</script>
+</body>
+</html>

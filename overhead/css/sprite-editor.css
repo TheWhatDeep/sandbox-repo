@@ -1,0 +1,115 @@
+/* Overhead Studio: sprite and tileset editors (js/sprite-editor.js).
+   Wide: tool column | canvas | side pane. Narrow (.pxe-narrow, set from the container's own width):
+   canvas on top, tool row, then the pane, which scrolls. Every colour comes from an app.css token. */
+.pxe {
+  --pxe-check: repeating-conic-gradient(var(--void) 0 25%, var(--raise) 0 50%) 0 0 / 12px 12px;
+  display: flex; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden;
+  background: var(--panel); color: var(--fg);
+}
+.pxe .btn { min-height: 34px; }
+.pxe .btn.icon { min-width: 34px; padding: 5px 7px; }
+.pxe .field input { min-height: 34px; }
+.pxe-ico { display: inline-flex; }
+.pxe-ico svg { display: block; }
+.pxe-hint { margin: 6px 0 0; line-height: 1.4; }
+.pxe-sub { margin: 10px 0 4px; }
+
+/* ---------- tools ---------- */
+.pxe-tools {
+  flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px;
+  border-right: 1px solid var(--line); overflow: auto; scrollbar-width: none;
+}
+.pxe-tools .btn { flex: none; width: 36px; height: 36px; padding: 0; }
+.pxe-sep { flex: none; width: 24px; height: 1px; margin: 3px 0; background: var(--line); }
+.pxe-dot { display: block; background: currentColor; border-radius: 1px; }
+
+/* ---------- canvas column ---------- */
+.pxe-main { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pxe-bar { flex: none; display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+.pxe-zoom { display: flex; align-items: center; gap: 4px; }
+.pxe-zl { min-width: 46px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.pxe-vsep { flex: none; width: 1px; height: 20px; margin: 0 3px; background: var(--line); }
+.pxe-stage { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; background: var(--bg); }
+.pxe-view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.pxe-boxbar { flex-wrap: wrap; gap: 4px 10px; }
+.pxe-seg { display: inline-flex; }
+.pxe-seg .btn { border-radius: 0; margin-left: -1px; }
+.pxe-seg .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
+.pxe-seg .btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.pxe-seg .btn[aria-pressed="true"] { position: relative; z-index: 1; font-weight: 600; }
+
+/* ---------- side pane ---------- */
+.pxe-pane { flex: none; width: 312px; padding: 12px; overflow: auto; border-left: 1px solid var(--line); }
+.pxe-cols { columns: 250px; column-gap: 24px; }
+.pxe-cols > .section { break-inside: avoid; }
+.pxe-cols > .section[hidden]:first-child + .section { border-top: 0; padding-top: 0; }
+.pxe-title { margin-bottom: 8px; font-weight: 600; overflow-wrap: anywhere; }
+.pxe-key { display: flex; align-items: center; gap: 6px; margin: 12px 0 5px; font-size: 13px; font-weight: 600; }
+.pxe-key i { width: 10px; height: 10px; border-radius: 2px; }
+.pxe-k-origin { background: var(--accent); border-radius: 50% !important; }
+.pxe-k-hit { background: color-mix(in srgb, var(--info) 30%, transparent); box-shadow: inset 0 0 0 2px var(--info); }
+.pxe-grid3, .pxe-grid4 { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pxe-grid4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.pxe-grid4 input { padding-left: 5px; padding-right: 2px; }
+.pxe-ops { margin-top: 10px; }
+.pxe-check { min-height: 32px; }
+.pxe-count { margin: 8px 0 0; font-weight: 600; }
+
+/* colours */
+.pxe-cur { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.pxe-cur input[type="color"] {
+  flex: none; width: 60px; height: 40px; padding: 3px; cursor: pointer;
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.pxe-cur code { font-size: 13px; }
+.pxe-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 4px; }
+.pxe-sw { height: 32px; padding: 0; border: 1px solid color-mix(in srgb, var(--fg) 30%, transparent); border-radius: 4px; }
+.pxe-sw:hover { border-color: var(--fg); }
+/* the selected swatch: a gap in the panel colour, then a ring, so it reads on any swatch colour */
+.pxe-sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--fg); position: relative; z-index: 1; }
+
+/* animations, frames, preview */
+.pxe-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.pxe-chips .btn { max-width: 100%; }
+.pxe-animrow { display: flex; gap: 12px; align-items: flex-start; }
+.pxe-animset { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.pxe-prevbox {
+  flex: none; display: grid; place-items: center; width: 106px; height: 106px; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.pxe-prev { image-rendering: pixelated; background: var(--pxe-check); }
+.pxe-frames { display: flex; flex-wrap: wrap; gap: 6px; }
+.pxe-thumb {
+  position: relative; width: 48px; height: 48px; padding: 3px; overflow: hidden;
+  background: var(--pxe-check); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.pxe-thumb img { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; pointer-events: none; }
+.pxe-thumb span {
+  position: absolute; left: 0; bottom: 0; min-width: 14px; padding: 0 3px; font: 10px/14px var(--font-mono); text-align: center;
+  color: var(--muted); background: var(--raise); border-radius: 0 4px 0 0;
+}
+.pxe-thumb:hover { border-color: var(--muted); }
+.pxe-thumb[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.pxe-thumb[aria-pressed="true"] span { color: var(--accent-ink); background: var(--accent); }
+
+/* dialogs (they live in document.body, outside .pxe) */
+.pxe-dialog .field input { min-height: 34px; }
+.pxe-dialog .pxe-count { margin: 10px 0; }
+.pxe-sheetwrap { margin-top: 12px; padding: 10px; overflow: auto; text-align: center; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
+.pxe-sheet {
+  display: inline-block; max-width: 100%; height: auto; image-rendering: pixelated;
+  background: repeating-conic-gradient(var(--void) 0 25%, var(--raise) 0 50%) 0 0 / 12px 12px;
+}
+
+/* ---------- narrow container: stack ---------- */
+.pxe-narrow { flex-direction: column; }
+.pxe-narrow .pxe-main { flex: 3 1 0; min-height: 150px; }
+.pxe-narrow .pxe-tools {
+  order: 1; flex-direction: row; justify-content: center; padding: 5px 6px;
+  border-right: 0; border-top: 1px solid var(--line);
+}
+.pxe-narrow .pxe-sep { width: 1px; height: 24px; margin: 0 2px; }
+.pxe-narrow .pxe-pane { order: 2; flex: 2 1 0; width: auto; min-height: 110px; border-left: 0; border-top: 1px solid var(--line); }
+.pxe-narrow .pxe-lbl { display: none; }
+.pxe-narrow .pxe-bar { padding: 5px 6px; }
+.pxe-narrow .pxe-zl { min-width: 40px; }

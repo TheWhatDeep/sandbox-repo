@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overhead Studio: built-in art preview</title>
+<style>
+  body { margin: 16px; background: #22222a; color: #e8e8f0; font: 13px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 24px 0 8px; border-bottom: 1px solid #444; padding-bottom: 4px; }
+  p { margin: 0 0 8px; color: #aab; }
+  img, canvas { image-rendering: pixelated; display: block; }
+  #sprites { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 10px; }
+  .card { background: #2c2c36; border-radius: 6px; padding: 8px; }
+  .card b { display: block; margin-bottom: 2px; }
+  .meta { color: #99a; font-size: 11px; margin-bottom: 6px; }
+  .strip { display: flex; gap: 0; padding: 8px; margin-bottom: 4px; align-items: flex-end; flex-wrap: wrap; }
+  .strip .gap { width: 16px; }
+  .frame { position: relative; }
+  .frame.boxes::after { content: ''; position: absolute; left: var(--hx); top: var(--hy); width: var(--hw); height: var(--hh); outline: 1px solid rgba(255, 0, 255, .9); }
+  .frame.boxes::before { content: ''; position: absolute; left: calc(var(--ox) - 2px); top: calc(var(--oy) - 2px); width: 4px; height: 4px; background: #0ff; z-index: 1; }
+  #tiles { display: grid; grid-template-columns: repeat(8, max-content); gap: 10px; }
+  .tile { font-size: 11px; color: #ccd; }
+  .tile .solid { color: #f88; }
+  .tile div.tiled { width: 96px; height: 96px; background-size: 32px 32px; image-rendering: pixelated; margin-bottom: 2px; }
+  #palette { display: flex; flex-wrap: wrap; gap: 2px; }
+  #palette span { width: 44px; height: 30px; font-size: 9px; display: flex; align-items: flex-end; justify-content: center; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+  label { margin-right: 12px; }
+</style>
+</head>
+<body>
+<h1>Overhead Studio: built-in art preview</h1>
+<p>Everything on this page comes from <code>../js/assets.js</code>. <label><input type="checkbox" id="boxes"> show hitboxes (pink) and origins (cyan)</label><span id="status"></span></p>
+
+<h2>Mock scene (3x)</h2>
+<canvas id="scene"></canvas>
+
+<h2>Sprites (every frame at 4x, on grass and on stone floor; the last picture in each row is animated)</h2>
+<div id="sprites"></div>
+
+<h2>Tileset (4x)</h2>
+<img id="tileset" alt="tileset">
+<h2>Each tile repeated 3x3 (2x) to check seams</h2>
+<div id="tiles"></div>
+
+<h2>Palette</h2>
+<div id="palette"></div>
+
+<script src="../js/assets.js"></script>
+<script>
+(function () {
+  'use strict';
+  const A = OV.Assets, ts = A.tileset(), sprites = A.sprites();
+  const $ = id => document.getElementById(id);
+  const el = (tag, props, kids) => { const e = Object.assign(document.createElement(tag), props || {}); (kids || []).forEach(k => e.append(k)); return e; };
+  const load = src => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = src; });
+  const tileName = i => Object.keys(A.TILE).find(k => A.TILE[k] === i);
+
+  load(ts.src).then(async tsImg => {
+    // One small picture per tile, for backgrounds.
+    const tileUrl = i => {
+      const c = el('canvas', { width: ts.tw, height: ts.th });
+      c.getContext('2d').drawImage(tsImg, (i % ts.cols) * ts.tw, Math.floor(i / ts.cols) * ts.th, ts.tw, ts.th, 0, 0, ts.tw, ts.th);
+      return c.toDataURL();
+    };
+    const grassUrl = tileUrl(A.TILE.grass), stoneUrl = tileUrl(A.TILE.stoneFloor);
+
+    /* ----- tileset ----- */
+    const big = $('tileset'); big.src = ts.src; big.width = ts.cols * ts.tw * 4; big.height = ts.rows * ts.th * 4;
+    for (let i = 0; i < ts.cols * ts.rows; i++) {
+      const d = el('div', { className: 'tiled' }); d.style.backgroundImage = 'url(' + tileUrl(i) + ')';
+      $('tiles').append(el('div', { className: 'tile' }, [d, i + ' ' + tileName(i), ts.solid[i] ? el('span', { className: 'solid', textContent: ' solid' }) : '']));
+    }
+
+    /* ----- palette ----- */
+    A.PALETTE.forEach(hex => { const s = el('span', { textContent: hex }); s.style.background = hex; $('palette').append(s); });
+
+    /* ----- sprites ----- */
+    const animated = [];
+    sprites.forEach(s => {
+      const card = el('div', { className: 'card' }, [
+        el('b', { textContent: s.id + ' "' + s.name + '"' }),
+        el('div', { className: 'meta', textContent: s.w + 'x' + s.h + ' origin ' + s.ox + ',' + s.oy + ' hit ' + [s.hit.x, s.hit.y, s.hit.w, s.hit.h].join(',') + ' | ' + s.anims.map(a => a.name + ' ' + a.frames.length + 'f@' + a.fps).join(', ') }),
+      ]);
+      [grassUrl, stoneUrl].forEach(bg => {
+        const strip = el('div', { className: 'strip' });
+        strip.style.background = 'url(' + bg + ') 0 0 / 64px 64px';
+        strip.style.imageRendering = 'pixelated';
+        const frame = src => {
+          const f = el('div', { className: 'frame' }, [el('img', { src, width: s.w * 4, height: s.h * 4 })]);
+          f.style.cssText = '--hx:' + s.hit.x * 4 + 'px;--hy:' + s.hit.y * 4 + 'px;--hw:' + s.hit.w * 4 + 'px;--hh:' + s.hit.h * 4 + 'px;--ox:' + s.ox * 4 + 'px;--oy:' + s.oy * 4 + 'px';
+          return f;
+        };
+        s.anims.forEach(a => { a.frames.forEach(src => strip.append(frame(src))); strip.append(el('div', { className: 'gap' })); });
+        const live = frame(s.anims[s.anims.length - 1].frames[0]);
+        strip.append(live);
+        animated.push({ img: live.firstChild, anim: s.anims[s.anims.length - 1] });
+        card.append(strip);
+      });
+      $('sprites').append(card);
+    });
+    $('boxes').onchange = e => document.querySelectorAll('.frame').forEach(f => f.classList.toggle('boxes', e.target.checked));
+    const t0 = performance.now();
+    setInterval(() => {
+      const t = (performance.now() - t0) / 1000;
+      animated.forEach(({ img, anim }) => { const src = anim.frames[Math.floor(t * anim.fps) % anim.frames.length]; if (img.src !== src) img.src = src; });
+    }, 50);
+
+    /* ----- mock scene ----- */
+    const K = A.TILE, W = 18, H = 11, Z = 3;
+    const map = [];
+    for (let y = 0; y < H; y++) { map.push([]); for (let x = 0; x < W; x++) map[y].push(K.grass); }
+    const put = (x, y, t) => { if (map[y] && x >= 0 && x < W) map[y][x] = t; };
+    const rect = (x0, y0, x1, y1, t) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) put(x, y, t); };
+    // a few grass variants
+    [[1, 1], [6, 2], [9, 9], [15, 7], [2, 8]].forEach(([x, y]) => put(x, y, K.grassFlowers));
+    [[3, 2], [8, 1], [12, 9], [16, 9], [0, 5], [7, 9]].forEach(([x, y]) => put(x, y, K.grassTuft));
+    // dirt path
+    rect(0, 6, 9, 6, K.dirt); rect(5, 7, 5, 10, K.dirt); rect(9, 5, 10, 6, K.dirt);
+    // pond with sand
+    rect(0, 8, 3, 10, K.sand); rect(0, 9, 2, 10, K.water); put(0, 10, K.waterDeep); put(1, 10, K.waterDeep);
+    // walled stone room: wallTop above wallFace at the back, wallTop on the sides and front
+    rect(10, 0, 17, 0, K.wallTop); rect(11, 1, 16, 1, K.wallFace);
+    rect(10, 1, 10, 7, K.wallTop); rect(17, 1, 17, 7, K.wallTop); rect(10, 7, 17, 7, K.wallTop);
+    rect(11, 2, 16, 6, K.stoneFloor); put(13, 4, K.stoneFloorCracked); put(15, 2, K.stoneFloorCracked);
+    rect(12, 3, 13, 5, K.carpet);
+    put(10, 5, K.stoneFloor); // doorway
+    rect(10, 8, 17, 8, K.wallFace); put(10, 6, K.wallTop);
+    // hedge and fence
+    rect(0, 0, 5, 0, K.hedge); rect(6, 4, 8, 4, K.fence);
+    // little strips of the other floors
+    put(12, 10, K.woodFloor); put(13, 10, K.planks); put(14, 10, K.checker); put(15, 10, K.darkFloor); put(16, 10, K.cobble); put(17, 10, K.lava);
+    put(8, 10, K.snow); put(9, 10, K.ice); put(10, 10, K.rockWall); put(11, 10, K.void);
+
+    const things = [ // sprite id, tile x, tile y, frame index (anim 0)
+      ['spr_tree', 1, 3], ['spr_tree', 2, 4], ['spr_tree', 7, 2], ['spr_bush', 4, 2], ['spr_rock', 3, 4], ['spr_sign', 4, 5],
+      ['spr_hero', 6, 6], ['spr_villager', 3, 6], ['spr_slime', 8, 7], ['spr_bat', 7, 8], ['spr_coin', 1, 6], ['spr_coin', 2, 6],
+      ['spr_heart', 6, 8], ['spr_gem', 4, 9], ['spr_flag', 9, 3], ['spr_crate', 6, 3], ['spr_barrel', 5, 3],
+      ['spr_door', 10, 5], ['spr_skeleton', 14, 5], ['spr_ghost', 15, 3], ['spr_totem', 11, 2], ['spr_chest', 16, 2],
+      ['spr_torch', 11, 6], ['spr_torch', 16, 6], ['spr_key', 12, 6], ['spr_potion', 14, 2], ['spr_stairs', 16, 4], ['spr_spikes', 14, 6],
+      ['spr_gate', 13, 7], ['spr_orb', 13, 3], ['spr_spark', 7, 6],
+    ];
+    const cv = $('scene'); cv.width = W * 16 * Z; cv.height = H * 16 * Z;
+    const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.scale(Z, Z);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const t = map[y][x];
+      ctx.drawImage(tsImg, (t % ts.cols) * 16, Math.floor(t / ts.cols) * 16, 16, 16, x * 16, y * 16, 16, 16);
+    }
+    const placed = await Promise.all(things.map(async ([id, tx, ty, f]) => {
+      const s = A.sprite(id), img = await load(s.anims[0].frames[f || 0]);
+      // Tile-sized things sit in their tile; smaller ones are centred in it.
+      const px = tx * 16 + 8 - s.w / 2, py = ty * 16 + 16 - s.h - (s.h < 16 ? 4 : 0);
+      return { img, px, py, sort: py + s.oy };
+    }));
+    placed.sort((a, b) => a.sort - b.sort).forEach(p => ctx.drawImage(p.img, p.px, p.py));
+    $('status').textContent = ' ' + sprites.length + ' sprites, ' + sprites.reduce((n, s) => n + s.anims.reduce((m, a) => m + a.frames.length, 0), 0) + ' frames, tileset ' + tsImg.width + 'x' + tsImg.height;
+    document.body.dataset.ready = '1';
+  });
+})();
+</script>
+</body>
+</html>
