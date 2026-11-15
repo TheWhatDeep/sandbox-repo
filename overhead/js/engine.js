@@ -854,12 +854,16 @@ window.OV.engineMain = function () {
     if (i.anim !== i._an) { const k = s.names[i.anim]; i._an = i.anim; if (k != null && k !== i._ai) { i._ai = k; i._af = 0; i._at = 0; i._ended = false; } }
     const a = s.anims[i._ai]; if (!a) return;
     i._animDone = false;
-    if (a.n > 1 && a.fps > 0) {
-      i._at += DT * a.fps;
-      while (i._at >= 1) {
-        i._at -= 1;
+    if (a.n > 1 && (a.fps > 0 || a.times)) {
+      // each frame shows for its own time if it has one, otherwise for 1 / fps seconds
+      const dur = k => (a.times && a.times[k] != null ? a.times[k] / 1000 : a.fps > 0 ? 1 / a.fps : 0.1);
+      i._at += DT;
+      let d = dur(i._af), guard = 0;
+      while (i._at >= d && guard++ < 64) {
+        i._at -= d;
         if (i._af + 1 >= a.n) { if (a.loop) i._af = 0; else { if (!i._ended) { i._animDone = true; i._animDoneName = a.name; i._ended = true; } i._at = 0; break; } }
         else { i._af++; i._ended = false; }
+        d = dur(i._af);
       }
     }
   }

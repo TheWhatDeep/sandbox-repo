@@ -14,7 +14,8 @@ Plain JavaScript, no dependencies, no build step. Open `index.html` and start ma
 | **Object types and copies** | An object type is a cookie cutter: its look, variables, behaviours and script. You stamp copies into rooms. Change the type and every copy changes. Each copy can still override its variables. |
 | **Rooms and layers** | A game has rooms (levels). A room has layers, like stacked sheets of glass: tile layers you paint, object layers that hold copies, and fixed-on-screen layers for score and hearts (scroll speed 0). |
 | **Tilemaps** | Paint floors and walls with a brush, box or flood fill. Tiles marked solid in the tileset block movement automatically. |
-| **Sprites** | Built-in pixel editor with animations, onion skin, sprite-sheet import, an origin point and a hitbox. A sprite with `idle` and `walk` animations switches between them by itself. |
+| **Sprites** | Built-in pixel editor with animations, onion skin, per-frame timing, an origin point and a hitbox. A sprite with `idle` and `walk` animations switches between them by itself. |
+| **Importing art** | Drop files onto the editor or use Sprites + → Import images. Many files at once are grouped into sprites and animations by file name (`hero_walk_01.png`). Animated GIFs keep their frames and timing. Aseprite sheet exports (PNG + JSON) keep their tags as animations. Sheets can be sliced with borders and gaps, and a solid background colour can be made see-through. |
 | **Behaviours** | Ready-made abilities you tick on: player controls, chase (with pathfinding), patrol, wander, bullet, turret, health, hurts on touch, collectible, door, talk, goal, camera follow, spawner, solid, pushable and more. |
 | **Event sheets** | Logic as rows: conditions on the left, actions on the right. "Player is touching Gate + keys > 0 → Destroy Gate, Add -1 to keys". Sub-events, notes, on/off, and a "Run JavaScript" action when you want code. |
 | **Scripts** | Any object type can also have plain JavaScript: `onCreate`, `onUpdate`, `onTouch(other)`, `onDestroy`. |
@@ -62,6 +63,7 @@ reported in the console (click it to jump there) and everything else still runs.
 | `js/editor.js` | Editor shell: undo, tabs, play mode, File dialog, export |
 | `js/tree.js`, `js/room.js`, `js/inspector.js`, `js/sheet.js`, `js/debug.js` | Project panel, room editor and layers, properties and object editor, event sheet editor, console and debugger |
 | `js/sprite-editor.js`, `css/sprite-editor.css` | Sprite and tileset pixel editors |
+| `js/importers.js` | Import dialog, file-name grouping, GIF decoder, Aseprite sheet reader |
 | `js/assets.js` | Built-in pixel art: 27 sprites and a 24-tile set, drawn in code |
 | `js/sample.js` | The ready-made object library, the starter kit and the sample game |
 | `js/store.js` | Where projects are saved (this browser's IndexedDB). Swap this file for cloud saving later |
@@ -69,6 +71,6 @@ reported in the console (click it to jump there) and everything else still runs.
 
 ## Not there yet
 
-Autotiling, rotated or polygon hitboxes, "else" and "or" in event sheets, object families beyond kinds,
+Opening `.aseprite` files directly (export a sheet with JSON from Aseprite instead), autotiling, rotated or polygon hitboxes, "else" and "or" in event sheets, object families beyond kinds,
 physics, animation events, a timeline, cloud saving and sharing. Projects made in the first single-file
 prototype (v0.1) do not open in this version.

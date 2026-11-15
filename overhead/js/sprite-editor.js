@@ -409,6 +409,12 @@
     const edit = fn => { api.begin(); try { fn(); } finally { api.commit(); } };
     const later = fn => { queue = queue.then(() => !dead && fn()).catch(e => OV.toast(e.message)); };   // async edits run one at a time
     const hit = () => sprite.hit || { x: 0, y: 0, w: sprite.w, h: sprite.h };
+    // Per-frame times (ms) live in anim.times, one entry per frame; null = use the animation's speed.
+    const timesOf = a => { if (!a.times || a.times.length !== a.frames.length) a.times = a.frames.map((f, i) => (a.times && a.times[i] != null ? a.times[i] : null)); return a.times; };
+    const tidyTimes = a => { if (a.times && a.times.every(t => t == null)) delete a.times; };
+    const tm = fn => { const a = anim(); if (a.times) { fn(a.times); tidyTimes(a); } };   // keep times in step with a frame edit
+    const frameMs = (a, i) => (a.times && a.times[i] != null ? a.times[i] : 1000 / clamp(+a.fps || 1, 1, 30));
+    const shownFps = a => (a.times ? clamp(Math.round(1000 / (a.frames.reduce((s, f, i) => s + frameMs(a, i), 0) / a.frames.length)), 1, 30) : a.fps);
 
     const tb = ToolBox(['pencil', 'eraser', 'fill', 'picker', 'line', 'rect', 'move'], { palette: () => api.palette, mirror: true, onTool: () => setBox(false) });
     const pc = PixelCanvas({ state: tb.st, onCommit: saveFrame, hook: hook, overlay: overlay,
@@ -481,9 +487,17 @@
 
     /* frames */
     const strip = h('div', { class: 'pxe-frames', role: 'group', 'aria-label': 'Frames' });
-    const fDel = ibtn('trash', 'Delete frame', () => frameOp(f => { f.splice(fi, 1); return Math.min(fi, f.length - 1); }));
+    const fDel = ibtn('trash', 'Delete frame', () => frameOp(f => { f.splice(fi, 1); tm(q => q.splice(fi, 1)); return Math.min(fi, f.length - 1); }));
     const fLeft = ibtn('left', 'Move frame earlier', () => moveFrame(-1)), fRight = ibtn('right', 'Move frame later', () => moveFrame(1));
     const frameTitle = h('h2', { class: 'label' });
+    const ftInp = h('input', { type: 'number', min: 10, max: 10000, step: 10, inputmode: 'numeric', 'aria-label': 'Frame time in milliseconds' });
+    const evenB = tbtn('Even out', () => { edit(() => { delete anim().times; }); renderFrames(); syncFields(root); }, 'Give every frame the same time again');
+    ftInp._sync = () => { const a = anim(), t = a.times && a.times[fi]; if (document.activeElement !== ftInp) ftInp.value = t == null ? '' : t; ftInp.placeholder = Math.round(1000 / clamp(+a.fps || 1, 1, 30)) + ' (animation speed)'; evenB.disabled = !a.times; };
+    ftInp.addEventListener('change', () => {
+      const v = ftInp.value.trim(), n = clamp(parseInt(v, 10) || 0, 10, 10000);
+      edit(() => { const a = anim(); timesOf(a)[fi] = v === '' ? null : n; tidyTimes(a); });
+      ftInp.blur(); renderFrames(); syncFields(root);
+    });
     function frameOp(fn) {               // fn mutates the frame list and returns the frame to select
       let next = fi;
       edit(() => { next = fn(frames()); });
@@ -491,14 +505,15 @@
     }
     function moveFrame(d) {
       const j = fi + d;
-      if (j >= 0 && j < frames().length) frameOp(f => { const t = f[fi]; f[fi] = f[j]; f[j] = t; return j; });
+      if (j >= 0 && j < frames().length) frameOp(f => { const t = f[fi]; f[fi] = f[j]; f[j] = t; tm(q => { const v = q[fi]; q[fi] = q[j]; q[j] = v; }); return j; });
     }
     function selectFrame(i) { fi = clamp(i, 0, frames().length - 1); renderFrames(); loadFrame(); }
     function renderFrames() {
       const f = frames(), had = strip.contains(document.activeElement);
       strip.replaceChildren(...f.map((src, i) => h('button', {
         class: 'pxe-thumb', type: 'button', title: 'Frame ' + (i + 1), 'aria-label': 'Frame ' + (i + 1), 'aria-pressed': String(i === fi), onclick: () => selectFrame(i),
-      }, src ? h('img', { src: src, alt: '', draggable: 'false' }) : null, h('span', { text: i + 1 }))));
+      }, src ? h('img', { src: src, alt: '', draggable: 'false' }) : null, h('span', { text: i + 1 }), anim().times && anim().times[i] != null ? h('em', { text: anim().times[i] + ' ms' }) : null)));
+      ftInp._sync();
       if (had && strip.children[fi]) strip.children[fi].focus();
       fDel.disabled = f.length < 2; fLeft.disabled = fi === 0; fRight.disabled = fi === f.length - 1;
       frameTitle.textContent = 'Frames of ' + anim().name;
@@ -548,7 +563,7 @@
       if (!n) return;
       if (pvI >= n) pvI = 0;
       if (!pvT) pvT = t;
-      if (t - pvT >= 1000 / clamp(+a.fps || 1, 1, 30) + (pvI === n - 1 && a.loop === false ? 700 : 0)) { pvI = (pvI + 1) % n; pvT = t; }
+      if (t - pvT >= frameMs(a, pvI) + (pvI === n - 1 && a.loop === false ? 700 : 0)) { pvI = (pvI + 1) % n; pvT = t; }
       const x = prev.getContext('2d'), im = pvI === fi ? pc.buf : img(a.frames[pvI]);   // the frame being edited is shown live
       x.clearRect(0, 0, prev.width, prev.height);
       if (im === pc.buf || ready(im)) x.drawImage(im, 0, 0);
@@ -587,50 +602,132 @@
           sprite.w = w; sprite.h = hh; frames()[0] = fitIn(w, hh); fitBox();
         });
         sync();
-      } else frameOp(f => { f.splice(fi + 1, 0, fitIn(sprite.w, sprite.h)); return fi + 1; });
+      } else frameOp(f => { f.splice(fi + 1, 0, fitIn(sprite.w, sprite.h)); tm(q => q.splice(fi + 1, 0, null)); return fi + 1; });
+    }
+    // Frames dropped onto the canvas (or handed in by the host): [{ canvas, time }] in order.
+    function addFrames(list) {
+      if (!list || !list.length || pc.locked || dead) return;
+      const a = anim(), fresh = sprite.anims.length === 1 && a.frames.length === 1 && blank(pc.bx, sprite.w, sprite.h);
+      let scaled = 0, start = fi + 1;
+      const fit = (c, w, hh) => {
+        const k = Math.min(1, w / c.width, hh / c.height), dw = Math.max(1, Math.round(c.width * k)), dh = Math.max(1, Math.round(c.height * k));
+        if (k < 1) scaled++;
+        return url(paint(w, hh, x => x.drawImage(c, 0, 0, dw, dh)));
+      };
+      list = list.slice(0, Math.max(0, MAX_FRAMES - (fresh ? 0 : a.frames.length)));
+      if (!list.length) { OV.toast('This animation already has ' + MAX_FRAMES + ' frames.'); return; }
+      edit(() => {
+        if (fresh) {                     // the empty starter sprite takes the first picture's size
+          const c = list[0].canvas, k = Math.min(1, MAX / c.width, MAX / c.height), w = Math.max(1, Math.round(c.width * k)), hh = Math.max(1, Math.round(c.height * k));
+          const kx = w / sprite.w, ky = hh / sprite.h, b = sprite.hit;
+          sprite.ox = Math.round(sprite.ox * kx); sprite.oy = Math.round(sprite.oy * ky);
+          if (b) { b.x = Math.round(b.x * kx); b.y = Math.round(b.y * ky); b.w = Math.round(b.w * kx); b.h = Math.round(b.h * ky); }
+          sprite.w = w; sprite.h = hh; a.frames.length = 0; delete a.times; start = 0; fitBox();
+        }
+        const urls = list.map(f => fit(f.canvas, sprite.w, sprite.h)), timed = !!a.times || list.some(f => f.time);
+        if (timed) timesOf(a);
+        a.frames.splice(start, 0, ...urls);
+        if (timed) { a.times.splice(start, 0, ...list.map(f => f.time || null)); tidyTimes(a); }
+        fi = start;
+      });
+      sync();
+      OV.toast('Added ' + list.length + (list.length === 1 ? ' frame' : ' frames') + (scaled ? '. ' + scaled + ' scaled down to fit' : '') + '.');
     }
     async function importSheet() {
       const im = await pickImage();
       if (!im || dead) return;
-      let cw = sprite.w, chh = sprite.h, cells = [];
+      const W = im.width, H = im.height, Imp = OV.Importers;
+      const o = { cw: sprite.w, ch: sprite.h, ox: 0, oy: 0, gx: 0, gy: 0, by: 'size', cols: 1, rows: 1, perRow: false, keyOn: false, key: [255, 0, 255], tol: 0 };
       // First guess for the cell: the current sprite size if it divides the sheet, else a strip of squares.
-      if (im.width % cw || im.height % chh) { chh = Math.min(MAX, im.height); cw = im.width % chh ? Math.min(MAX, im.width) : chh; }
-      const src = paint(im.width, im.height, x => x.drawImage(im, 0, 0)), data = src.getContext('2d').getImageData(0, 0, im.width, im.height).data;
-      const k = Math.min(8, 440 / im.width, 280 / im.height), info = h('p', { class: 'pxe-count' });
-      const pv = h('canvas', { class: 'pxe-sheet', width: Math.max(1, Math.round(im.width * k)), height: Math.max(1, Math.round(im.height * k)) });
+      if (W % o.cw || H % o.ch) { o.ch = Math.min(MAX, H); o.cw = W % o.ch ? Math.min(MAX, W) : o.ch; }
+      o.cols = Math.max(1, Math.floor(W / o.cw)); o.rows = Math.max(1, Math.floor(H / o.ch));
+      const raw = paint(W, H, x => x.drawImage(im, 0, 0));
+      o.key = Imp.pixel(raw, 0, 0).slice(0, 3);
+      const opaque = Imp.isOpaque(raw);
+      let src = raw, data = null, rowsOut = [], total = 0; const names = [];
+      const k = Math.min(8, 440 / W, 280 / H), info = h('p', { class: 'pxe-count' }), rowNames = h('div', { class: 'pxe-rownames' }), ctl = h('div', { class: 'pxe-sheetctl' });
+      const pv = h('canvas', { class: 'pxe-sheet', width: Math.max(1, Math.round(W * k)), height: Math.max(1, Math.round(H * k)), title: 'Tap a colour to make it see-through' });
+      const prep = () => {               // the sheet with the chosen colour removed, if that is on
+        src = raw;
+        if (o.keyOn) { src = paint(W, H, x => x.drawImage(raw, 0, 0)); Imp.removeColour(src, o.key, o.tol); }
+        data = src.getContext('2d').getImageData(0, 0, W, H).data;
+      };
       const scan = () => {               // find the cells with at least one visible pixel, redraw the grid preview
-        const cols = Math.floor(im.width / cw), rows = Math.floor(im.height / chh), many = cols * rows > 4096;
-        cells = [];
-        for (let r = 0; r < rows && !many; r++) for (let c = 0; c < cols; c++) {
-          let any = false;
-          for (let y = r * chh; y < (r + 1) * chh && !any; y++) {
-            for (let x = c * cw; x < (c + 1) * cw && !any; x++) any = data[(y * im.width + x) * 4 + 3] > 0;
-          }
-          if (any) cells.push([c * cw, r * chh]);
+        if (o.by === 'grid') {
+          o.cw = clamp(Math.floor((W - o.ox - (o.cols - 1) * o.gx) / o.cols), 1, MAX); o.ch = clamp(Math.floor((H - o.oy - (o.rows - 1) * o.gy) / o.rows), 1, MAX);
         }
-        const x = pv.getContext('2d');
-        x.imageSmoothingEnabled = false; x.clearRect(0, 0, pv.width, pv.height); x.drawImage(im, 0, 0, pv.width, pv.height);
-        x.fillStyle = getComputedStyle(pv).getPropertyValue('--accent').trim() || '#888';
-        for (let c = 0; c <= cols && !many; c++) x.fillRect(Math.min(pv.width - 1, Math.round(c * cw * k)), 0, 1, Math.round(rows * chh * k));
-        for (let r = 0; r <= rows && !many; r++) x.fillRect(0, Math.min(pv.height - 1, Math.round(r * chh * k)), Math.round(cols * cw * k), 1);
-        const skipped = cols * rows - cells.length;
-        info.textContent = many || cells.length > MAX_FRAMES ? 'That is too many frames (' + MAX_FRAMES + ' at most). Use bigger cells.'
-          : cols + ' × ' + rows + ' cells: ' + cells.length + ' frame' + (cells.length === 1 ? '' : 's') + (skipped ? ', ' + skipped + ' empty skipped.' : '.');
+        const cols = o.by === 'grid' ? o.cols : Math.max(0, Math.floor((W - o.ox + o.gx) / (o.cw + o.gx)));
+        const rows = o.by === 'grid' ? o.rows : Math.max(0, Math.floor((H - o.oy + o.gy) / (o.ch + o.gy)));
+        const many = cols * rows > 4096, x = pv.getContext('2d');
+        x.imageSmoothingEnabled = false; x.clearRect(0, 0, pv.width, pv.height); x.drawImage(src, 0, 0, pv.width, pv.height);
+        x.strokeStyle = getComputedStyle(pv).getPropertyValue('--accent').trim() || '#888'; x.lineWidth = 1;
+        rowsOut = []; total = 0; let all = 0;
+        for (let r = 0; r < rows && !many; r++) {
+          const row = [];
+          for (let c = 0; c < cols; c++) {
+            const x0 = o.ox + c * (o.cw + o.gx), y0 = o.oy + r * (o.ch + o.gy);
+            if (x0 + o.cw > W || y0 + o.ch > H) continue;
+            all++; x.strokeRect(Math.round(x0 * k) + 0.5, Math.round(y0 * k) + 0.5, Math.max(1, Math.round(o.cw * k) - 1), Math.max(1, Math.round(o.ch * k) - 1));
+            let any = false;
+            for (let y = y0; y < y0 + o.ch && !any; y++) for (let px = x0; px < x0 + o.cw && !any; px++) any = data[(y * W + px) * 4 + 3] > 0;
+            if (any) row.push([x0, y0]);
+          }
+          if (row.length) { rowsOut.push(row); total += row.length; }
+        }
+        const longest = rowsOut.reduce((m, r) => Math.max(m, r.length), 0), over = many || (o.perRow ? longest : total) > MAX_FRAMES;
+        info.textContent = over ? 'That is too many frames (' + MAX_FRAMES + ' at most). Use bigger cells.'
+          : o.cw + ' × ' + o.ch + ' px cells: ' + total + ' frame' + (total === 1 ? '' : 's') + (all - total ? ', ' + (all - total) + ' empty skipped' : '') + (o.perRow ? ', ' + rowsOut.length + ' animation' + (rowsOut.length === 1 ? '' : 's') : '') + '.';
+        rowNames.textContent = '';
+        if (o.perRow && !over) rowsOut.forEach((row, i) => {
+          const inp = h('input', { type: 'text', maxlength: 24, value: names[i] || 'row' + (i + 1), 'aria-label': 'Name of animation ' + (i + 1), spellcheck: 'false' });
+          inp.addEventListener('change', () => { names[i] = OV.ident(inp.value, 'row' + (i + 1)); inp.value = names[i]; });
+          rowNames.append(h('label', { class: 'field' }, h('span', { text: 'Row ' + (i + 1) + ' (' + row.length + ')' }), inp));
+        });
+        return !over && total > 0;
       };
+      const again = () => { prep(); scan(); };
+      function controls() {
+        const cut = h('select', null, h('option', { value: 'size', text: 'Cell size' }), h('option', { value: 'grid', text: 'Columns and rows' }));
+        cut.value = o.by; cut.addEventListener('change', () => { o.by = cut.value; controls(); scan(); });
+        const col = h('input', { type: 'color', 'aria-label': 'Colour to remove' });
+        col.value = '#' + o.key.map(v => v.toString(16).padStart(2, '0')).join('');
+        col.addEventListener('input', () => { o.key = [1, 3, 5].map(q => parseInt(col.value.slice(q, q + 2), 16)); again(); });
+        ctl.replaceChildren(
+          h('div', { class: 'pxe-grid4' },
+            h('label', { class: 'field' }, h('span', { text: 'Cut by' }), cut),
+            o.by === 'size' ? num('Cell width', () => o.cw, v => { o.cw = v; scan(); }, 1, Math.min(MAX, W), true) : num('Columns', () => o.cols, v => { o.cols = v; scan(); }, 1, 256, true),
+            o.by === 'size' ? num('Cell height', () => o.ch, v => { o.ch = v; scan(); }, 1, Math.min(MAX, H), true) : num('Rows', () => o.rows, v => { o.rows = v; scan(); }, 1, 256, true)),
+          h('div', { class: 'pxe-grid4' },
+            num('Border left', () => o.ox, v => { o.ox = v; scan(); }, 0, W - 1, true), num('Border top', () => o.oy, v => { o.oy = v; scan(); }, 0, H - 1, true),
+            num('Gap across', () => o.gx, v => { o.gx = v; scan(); }, 0, 64, true), num('Gap down', () => o.gy, v => { o.gy = v; scan(); }, 0, 64, true)),
+          h('div', { class: 'pxe-sheetchecks' },
+            check('Each row is its own animation', () => o.perRow, v => { o.perRow = v; scan(); }),
+            check('Make one colour see-through', () => o.keyOn, v => { o.keyOn = v; controls(); again(); }),
+            o.keyOn ? h('span', { class: 'pxe-keyrow' }, col, num('Tolerance', () => o.tol, v => { o.tol = v; again(); }, 0, 32)) : null),
+          !o.keyOn && opaque ? hint('This picture has no see-through parts. Turn on "Make one colour see-through", or tap the background in the preview.') : null);
+      }
+      pv.addEventListener('click', e => {
+        const r = pv.getBoundingClientRect(), px = Imp.pixel(raw, (e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H);
+        if (!px[3]) return; o.key = px.slice(0, 3); o.keyOn = true; controls(); again();
+      });
       const slice = close => {
-        if (!cells.length || cells.length > MAX_FRAMES) return;
-        const fr = cells.map(q => url(paint(cw, chh, x => x.drawImage(src, q[0], q[1], cw, chh, 0, 0, cw, chh)))), w = cw, hh = chh;
-        close();
-        later(() => resizeAll(w, hh, () => { anim().frames = fr; fi = 0; }));
+        if (!scan()) return;
+        const cutOut = q => url(paint(o.cw, o.ch, x => x.drawImage(src, q[0], q[1], o.cw, o.ch, 0, 0, o.cw, o.ch))), w = o.cw, hh = o.ch;
+        if (o.perRow) {
+          const taken = [], fps = anim().fps || 8;
+          const anims = rowsOut.map((row, i) => { const name = OV.uniqueName(OV.ident(names[i] || 'row' + (i + 1), 'row'), taken); taken.push(name); return { name: name, fps: fps, loop: true, frames: row.map(cutOut) }; });
+          close();
+          later(() => resizeAll(w, hh, () => { sprite.anims = anims; ai = 0; fi = 0; }));
+        } else {
+          const fr = [].concat.apply([], rowsOut).map(cutOut);
+          close();
+          later(() => resizeAll(w, hh, () => { anim().frames = fr; delete anim().times; fi = 0; }));
+        }
       };
-      const note = 'Slicing sets the sprite size to the cell size and replaces the frames of "' + anim().name + '". Cells are read left to right, top to bottom.';
+      const note = 'Slicing sets the sprite size to the cell size. It replaces the frames of "' + anim().name + '", or every animation when each row is its own. Cells are read left to right, top to bottom.';
       OV.modal({ title: 'Import sprite sheet', wide: true, actions: [{ label: 'Cancel' }, { label: 'Slice into frames', primary: true, onClick: slice }],
-        content: h('div', { class: 'pxe-dialog' },
-          h('div', { class: 'grid2' },
-            num('Cell width', () => cw, v => { cw = v; scan(); }, 1, Math.min(MAX, im.width), true),
-            num('Cell height', () => chh, v => { chh = v; scan(); }, 1, Math.min(MAX, im.height), true)),
-          h('div', { class: 'pxe-sheetwrap' }, pv), info, h('p', { class: 'modal-text', text: note })) });
-      scan();
+        content: h('div', { class: 'pxe-dialog' }, ctl, h('div', { class: 'pxe-sheetwrap' }, pv), info, rowNames, h('p', { class: 'modal-text', text: note })) });
+      controls(); again();
     }
 
     /* layout */
@@ -652,13 +749,15 @@
       tb.colours,
       section('Animations', chips,
         h('div', { class: 'pxe-animrow' }, h('div', { class: 'pxe-prevbox', title: 'Preview' }, prev),
-          h('div', { class: 'pxe-animset' }, num('Frames per second', () => anim().fps, v => edit(() => { anim().fps = v; }), 1, 30),
+          h('div', { class: 'pxe-animset' }, num('Frames per second', () => shownFps(anim()), v => edit(() => { const a = anim(); if (a.times) { const k = shownFps(a) / v; a.times = a.times.map(t => (t == null ? null : clamp(Math.round(t * k), 10, 10000))); } a.fps = v; }), 1, 30),
             check('Loop', () => anim().loop !== false, v => { edit(() => { anim().loop = v; }); loadFrame(); }),
             h('div', { class: 'row' }, tbtn('Rename', renameAnim), aDel))),
         hint('Animations named idle and walk play on their own in the game.')),
       h('section', { class: 'section' }, frameTitle, strip,
-        h('div', { class: 'row pxe-ops' }, ibtn('plus', 'Add a blank frame', () => frameOp(f => { f.splice(fi + 1, 0, ''); return fi + 1; })),
-          ibtn('dup', 'Duplicate frame', () => frameOp(f => { f.splice(fi + 1, 0, f[fi]); return fi + 1; })), fLeft, fRight, fDel)),
+        h('div', { class: 'row pxe-ops' }, ibtn('plus', 'Add a blank frame', () => frameOp(f => { f.splice(fi + 1, 0, ''); tm(q => q.splice(fi + 1, 0, null)); return fi + 1; })),
+          ibtn('dup', 'Duplicate frame', () => frameOp(f => { f.splice(fi + 1, 0, f[fi]); tm(q => q.splice(fi + 1, 0, q[fi])); return fi + 1; })), fLeft, fRight, fDel),
+        h('div', { class: 'pxe-ftime' }, h('label', { class: 'field' }, h('span', { text: 'This frame shows for (ms)' }), ftInp), evenB),
+        hint('Leave blank to use the animation speed. Give a frame its own time to hold a pose longer.')),
       section('Sprite', title,
         h('div', { class: 'grid2' },
           num('Width', () => sprite.w, v => later(() => resizeAll(v, sprite.h)), 1, MAX),
@@ -711,6 +810,7 @@
         fi = clamp(fi, 0, frames().length - 1);
         pc.cancel(); draft = null; sync();
       },
+      addFrames: addFrames,
       destroy: function () { dead = true; cancelAnimationFrame(pvRaf); unkey(); pc.destroy(); sh.done(); },
     };
   } };

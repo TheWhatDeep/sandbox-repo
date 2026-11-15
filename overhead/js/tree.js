@@ -73,7 +73,7 @@
     OV.menu(anchor, items);
   }
   function addSprite(anchor) {
-    const items = [{ label: 'New blank sprite', onClick: () => { let s; OV.edit(() => { s = M.newSprite(OV.project, 'Sprite', 16, 16); S.sel = { kind: 'sprite', id: s.id }; }); OV.open('sprite', s.id); } }, { heading: 'Built-in art' }];
+    const items = [{ label: 'Import images…', onClick: () => OV.Importers.pick() }, { label: 'New blank sprite', onClick: () => { let s; OV.edit(() => { s = M.newSprite(OV.project, 'Sprite', 16, 16); S.sel = { kind: 'sprite', id: s.id }; }); OV.open('sprite', s.id); } }, { heading: 'Built-in art' }];
     OV.Assets.sprites().forEach(a => items.push({ label: a.name, onClick: () => OV.edit(() => { const s = OV.Sample.sprite(OV.project, a.id); S.sel = { kind: 'sprite', id: s.id }; }) }));
     OV.menu(anchor, items);
   }

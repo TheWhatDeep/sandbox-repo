@@ -131,7 +131,7 @@
     out.sprites.forEach(s => {
       s.hit = s.hit || { x: 0, y: 0, w: s.w, h: s.h };
       if (!s.anims || !s.anims.length) s.anims = [{ name: 'idle', fps: 6, loop: true, frames: [''] }];
-      s.anims.forEach(a => { if (!a.frames || !a.frames.length) a.frames = ['']; });
+      s.anims.forEach(a => { if (!a.frames || !a.frames.length) a.frames = ['']; if (a.times && (!Array.isArray(a.times) || a.times.length !== a.frames.length || a.times.every(t => t == null))) delete a.times; });
     });
     out.tilesets.forEach(t => { const n = t.cols * t.rows; t.solid = (t.solid || []).slice(0, n); while (t.solid.length < n) t.solid.push(false); });
     out.rooms.forEach(r => {

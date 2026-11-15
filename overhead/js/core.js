@@ -254,6 +254,11 @@
     fr.onload = () => res(fr.result); fr.onerror = () => rej(new Error('Could not read that file.'));
     if (as === 'text') fr.readAsText(file); else fr.readAsDataURL(file);
   });
+  OV.pickFiles = accept => new Promise(res => {
+    const inp = h('input', { type: 'file', accept: accept, multiple: true, style: { display: 'none' } });
+    inp.addEventListener('change', () => { res(Array.from(inp.files || [])); inp.remove(); });
+    document.body.append(inp); inp.click();
+  });
   OV.pickFile = accept => new Promise(res => {
     const inp = h('input', { type: 'file', accept: accept, style: { display: 'none' } });
     inp.addEventListener('change', () => { res(inp.files[0] || null); inp.remove(); });

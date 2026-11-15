@@ -323,7 +323,13 @@
           OV.endEdit(); OV.Tree.later();
         },
       });
-      return { refresh: () => ed.refresh(), destroy: () => ed.destroy() };
+      return {
+        refresh: () => ed.refresh(), destroy: () => ed.destroy(),
+        async dropFiles(files) { // pictures dropped on the drawing area become frames of the open animation
+          const r = await OV.Importers.loadFrames(files);
+          if (r.frames.length) ed.addFrames(r.frames); else OV.toast(r.skipped.length ? r.skipped[0].name + ': ' + r.skipped[0].why : 'No pictures in that drop.');
+        },
+      };
     },
   };
   OV.docs.tileset = {

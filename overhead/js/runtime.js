@@ -245,7 +245,7 @@ window.OV.runtimeFactory = function () {
       const light = {
         settings: S, globals: project.globals, sheets: project.sheets, rooms: project.rooms,
         sounds: project.sounds.map(s => ({ id: s.id, name: s.name })),
-        sprites: project.sprites.map(s => ({ id: s.id, w: s.w, h: s.h, ox: s.ox, oy: s.oy, hit: s.hit, anims: s.anims.map(a => ({ name: a.name, fps: a.fps, loop: a.loop !== false, n: a.frames.length })) })),
+        sprites: project.sprites.map(s => ({ id: s.id, w: s.w, h: s.h, ox: s.ox, oy: s.oy, hit: s.hit, anims: s.anims.map(a => ({ name: a.name, fps: a.fps, loop: a.loop !== false, n: a.frames.length, times: a.times && a.times.length === a.frames.length ? a.times : undefined })) })),
         tilesets: project.tilesets.map(t => ({ id: t.id, tw: t.tw, th: t.th, solid: t.solid })),
         types: project.types.map(t => Object.assign({}, t, { script: undefined })),
       };

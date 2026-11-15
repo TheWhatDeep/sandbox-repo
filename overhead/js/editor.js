@@ -255,6 +255,24 @@
   });
   window.addEventListener('keyup', e => { if (docApi && docApi.keyup) docApi.keyup(e); });
 
+  /* ---------------- dropping files onto the editor ---------------- */
+  let dragDepth = 0;
+  const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+  const veil = on => { let v = $('#drop-veil'); if (!v) { v = h('div', { id: 'drop-veil', class: 'drop-veil', hidden: true }, h('div', { text: 'Drop to import' })); document.body.append(v); } v.hidden = !on; };
+  window.addEventListener('dragenter', e => { if (!hasFiles(e) || S.playing) return; e.preventDefault(); dragDepth++; veil(true); });
+  window.addEventListener('dragover', e => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = S.playing ? 'none' : 'copy'; });
+  window.addEventListener('dragleave', e => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) veil(false); });
+  window.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); dragDepth = 0; veil(false);
+    if (S.playing || OV.modalOpen()) return;
+    const files = Array.from(e.dataTransfer.files || []); if (!files.length) return;
+    // On the drawing area of an open sprite, pictures become frames. Anywhere else they go through the Import dialog.
+    const at = document.elementFromPoint(e.clientX, e.clientY), onCanvas = at && at.closest && at.closest('.pxe-stage') && S.doc && S.doc.kind === 'sprite';
+    const pics = files.every(f => ['image', 'gif'].includes(OV.Importers.kindOf(f)));
+    if (onCanvas && pics && docApi && docApi.dropFiles) docApi.dropFiles(files); else OV.Importers.run(files);
+  });
+
   /* ---------------- boot ---------------- */
   // On phones the panel tabs also work as a toggle: tap the open tab again to give the document the whole screen.
   function showPanel(id) {
